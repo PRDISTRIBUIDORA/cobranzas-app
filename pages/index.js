@@ -1,3 +1,8 @@
+bash
+
+cat /home/claude/cobranzas-v3/pages/index.js
+Salida
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import Head from "next/head";
 import * as XLSX from "xlsx";
@@ -394,9 +399,12 @@ function DeudoresTab() {
   </div>;
 }
 
+const COBRADORES = ["Juan", "Antonella", "Sabrina"];
+
 /* ─── COBRANZAS TAB ───────────────────────────────────── */
-function CobranzasTab({ isAdmin, clientes }) {
+function CobranzasTab({ isAdmin }) {
   const [rows, setRows] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("Todos");
@@ -406,7 +414,14 @@ function CobranzasTab({ isAdmin, clientes }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const r = await apiGet({ action: "getData", sheet: "Cobranzas" }); setRows(Array.isArray(r.data) ? r.data : []); }
+    try {
+      const [rc, rcl] = await Promise.all([
+        apiGet({ action: "getData", sheet: "Cobranzas" }),
+        apiGet({ action: "getData", sheet: "Clientes" }),
+      ]);
+      setRows(Array.isArray(rc.data) ? rc.data : []);
+      setClientes(Array.isArray(rcl.data) ? rcl.data : []);
+    }
     catch (e) { console.error(e); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -481,7 +496,12 @@ function CobranzasTab({ isAdmin, clientes }) {
       <Field label="Monto"><input style={S.input} type="number" value={form.monto || ""} onChange={e => setForm(p => ({ ...p, monto: e.target.value }))} placeholder="0" /></Field>
       <Field label="Vencimiento"><input style={S.input} type="date" value={form.fechaVencimiento || ""} onChange={e => setForm(p => ({ ...p, fechaVencimiento: e.target.value }))} /></Field>
       <Field label="Estado"><select style={S.input} value={form.estado || "Pendiente"} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))}>{COBRANZA_ESTADOS.map(e => <option key={e}>{e}</option>)}</select></Field>
-      <Field label="Cobrador"><input style={S.input} value={form.cobrador || ""} onChange={e => setForm(p => ({ ...p, cobrador: e.target.value }))} placeholder="Juan / Anto / Sabri" /></Field>
+      <Field label="Cobrador">
+        <select style={S.input} value={form.cobrador || ""} onChange={e => setForm(p => ({ ...p, cobrador: e.target.value }))}>
+          <option value="">— Seleccionar —</option>
+          {COBRADORES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </Field>
       <Field label="Notas"><textarea style={{ ...S.input, height: 60, resize: "none" }} value={form.notas || ""} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setModal(null)}>Cancelar</button>
@@ -492,8 +512,9 @@ function CobranzasTab({ isAdmin, clientes }) {
 }
 
 /* ─── VISITAS TAB ─────────────────────────────────────── */
-function VisitasTab({ isAdmin, clientes }) {
+function VisitasTab({ isAdmin }) {
   const [rows, setRows] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("Todos");
@@ -503,7 +524,14 @@ function VisitasTab({ isAdmin, clientes }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const r = await apiGet({ action: "getData", sheet: "Visitas" }); setRows(Array.isArray(r.data) ? r.data : []); }
+    try {
+      const [rv, rcl] = await Promise.all([
+        apiGet({ action: "getData", sheet: "Visitas" }),
+        apiGet({ action: "getData", sheet: "Clientes" }),
+      ]);
+      setRows(Array.isArray(rv.data) ? rv.data : []);
+      setClientes(Array.isArray(rcl.data) ? rcl.data : []);
+    }
     catch (e) { console.error(e); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -574,7 +602,12 @@ function VisitasTab({ isAdmin, clientes }) {
         <Field label="Hora"><input style={S.input} type="time" value={form.hora || ""} onChange={e => setForm(p => ({ ...p, hora: e.target.value }))} /></Field>
       </div>
       <Field label="Estado"><select style={S.input} value={form.estado || "Programada"} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))}>{VISITA_ESTADOS.map(e => <option key={e}>{e}</option>)}</select></Field>
-      <Field label="Cobrador"><input style={S.input} value={form.cobrador || ""} onChange={e => setForm(p => ({ ...p, cobrador: e.target.value }))} placeholder="Juan / Anto / Sabri" /></Field>
+      <Field label="Cobrador">
+        <select style={S.input} value={form.cobrador || ""} onChange={e => setForm(p => ({ ...p, cobrador: e.target.value }))}>
+          <option value="">— Seleccionar —</option>
+          {COBRADORES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </Field>
       <Field label="Notas"><textarea style={{ ...S.input, height: 60, resize: "none" }} value={form.notas || ""} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setModal(null)}>Cancelar</button>
@@ -732,8 +765,8 @@ export default function Home() {
             {tab === "resumen"   && "Resumen semanal — exportable a Excel"}
           </p>
         </div>
-        {tab === "cobranzas" && <CobranzasTab isAdmin={isAdmin} clientes={clientes} />}
-        {tab === "visitas"   && <VisitasTab isAdmin={isAdmin} clientes={clientes} />}
+        {tab === "cobranzas" && <CobranzasTab isAdmin={isAdmin} />}
+        {tab === "visitas"   && <VisitasTab isAdmin={isAdmin} />}
         {tab === "importar"  && isAdmin && <ImportarTab />}
         {tab === "clientes"  && isAdmin && <ClientesTab />}
         {tab === "deudores"  && isAdmin && <DeudoresTab />}
