@@ -81,6 +81,42 @@ function Field({ label, children }) {
   return <div style={{marginBottom:13}}><label style={S.label}>{label}</label>{children}</div>;
 }
 
+function ClienteSearch({ clientes, value, onChange }) {
+  const [q, setQ] = useState(value||"");
+  const [open, setOpen] = useState(false);
+  const filtered = q.length > 0 ? clientes.filter(c =>
+    c.nombre?.toLowerCase().includes(q.toLowerCase()) ||
+    c.localidad?.toLowerCase().includes(q.toLowerCase()) ||
+    String(c.codigo||"").includes(q)
+  ).slice(0, 20) : [];
+  const selected = clientes.find(c => c.nombre === value);
+  return <div style={{position:"relative"}}>
+    <input
+      style={{...S.input, borderColor: value ? "#eab30860" : undefined}}
+      value={open ? q : (value || "")}
+      placeholder="Escribí para buscar cliente…"
+      onFocus={()=>{ setOpen(true); setQ(""); }}
+      onBlur={()=>setTimeout(()=>setOpen(false),200)}
+      onChange={e=>{ setQ(e.target.value); setOpen(true); }}
+    />
+    {value && !open && <div style={{fontSize:11,color:"#64748b",marginTop:3}}>{selected?.localidad}</div>}
+    {open && q.length > 0 && <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"#1e2530",border:"1px solid rgba(255,255,255,.15)",borderRadius:8,maxHeight:200,overflowY:"auto",marginTop:2}}>
+      {filtered.length === 0
+        ? <div style={{padding:"10px 14px",color:"#475569",fontSize:13}}>Sin resultados</div>
+        : filtered.map(c => <div key={c.id}
+            onMouseDown={()=>{ onChange(c.nombre, c.localidad||""); setQ(c.nombre); setOpen(false); }}
+            style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:13,color:"#fff"}}
+            onMouseEnter={e=>e.currentTarget.style.background="#262d38"}
+            onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+          >
+            <span style={{fontWeight:600}}>{c.nombre}</span>
+            <span style={{color:"#64748b",fontSize:11,marginLeft:8}}>{c.localidad}</span>
+          </div>)
+      }
+    </div>}
+  </div>;
+}
+
 /* ─── Excel parsers ───────────────────────────────────── */
 function parseClientesExcel(workbook) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -521,10 +557,7 @@ function VisitasTab({ isAdmin }) {
     {modal && <Modal title={modal==="add"?"Nueva visita":"Editar visita"} onClose={()=>setModal(null)}>
       <Field label="Cliente *">
         {clientes.length > 0
-          ? <select style={S.input} value={form.cliente||""} onChange={e=>{ const c=clientes.find(x=>x.nombre===e.target.value); setForm(p=>({...p,cliente:e.target.value,localidad:c?.localidad||""})); }}>
-              <option value="">— Seleccionar —</option>
-              {clientes.map(c=><option key={c.id} value={c.nombre}>{c.nombre} ({c.localidad})</option>)}
-            </select>
+          ? <ClienteSearch clientes={clientes} value={form.cliente||""} onChange={(nombre,localidad)=>setForm(p=>({...p,cliente:nombre,localidad}))} />
           : <input style={S.input} value={form.cliente||""} onChange={e=>setForm(p=>({...p,cliente:e.target.value}))} />}
       </Field>
       <Field label="Estado">
