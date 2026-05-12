@@ -135,21 +135,29 @@ function parseDeudoresExcel(workbook) {
   let current = null;
   for (const row of rows) {
     const colA = String(row[0]||"").trim();
+    const colB = String(row[1]||"").trim();
     const colC = String(row[2]||"").trim();
     const colD = String(row[3]||"").trim();
-    if (colA && colA !== "Nombre" && colA !== "Cliente" && isNaN(Number(colA))) {
-      const saldo = parseFloat(String(row[2]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
-      current = { nombre:colA.replace(/^\+\s*/,""), saldo, localidad:String(row[3]||"").trim(), codigo:null };
-      deudores.push(current);
-    } else if (colA && !isNaN(Number(colA)) && Number(colA) > 0 && current) {
-      if (!current.codigo) current.codigo = colA;
-      let fecha = String(row[1]||"").trim();
-      if (!isNaN(Number(row[1])) && Number(row[1]) > 40000) {
-        const d = XLSX.SSF.parse_date_code(Number(row[1]));
-        fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+
+    // Fila de cliente: col A tiene código numérico, col B tiene nombre, col D tiene saldo
+    if (colA && !isNaN(Number(colA)) && Number(colA) > 0 && colB && colB !== "Cliente" && colB !== "Fecha") {
+      // Check if this is a client header row (has nombre in col B and saldo in col D)
+      const saldo = parseFloat(String(row[3]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
+      const localidad = String(row[5]||"").trim(); // col F = Localidad
+      if (saldo > 0 || localidad) {
+        // This is a client header row
+        current = { codigo:colA, nombre:colB.replace(/^\+\s*/,""), saldo, localidad };
+        deudores.push(current);
+      } else if (current) {
+        // This is a detail row
+        let fecha = String(row[2]||"").trim(); // col C = Fecha
+        if (!isNaN(Number(row[2])) && Number(row[2]) > 40000) {
+          const d = XLSX.SSF.parse_date_code(Number(row[2]));
+          fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+        }
+        const importe = parseFloat(String(row[5]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
+        comprobantes.push({ codigo:colA, cliente:current.nombre, fecha, comprobante:String(row[3]||""), importe });
       }
-      const importe = parseFloat(String(row[4]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
-      comprobantes.push({ codigo:colA, cliente:current.nombre, fecha, comprobante:String(row[3]||""), importe });
     }
   }
   return { deudores, comprobantes };
@@ -762,13 +770,30 @@ function ResumenTab() {
     mas60:     cobros.filter(c=>c.cobrador===nombre&&Number(c.diasDeuda)>60).reduce((a,c)=>a+Number(c.monto),0),
   }));
 
+  const cerrarSemana = async () => {
+    // Step 1: export
+    exportResumen(cobros, visitas, clientes);
+    // Step 2: confirm before clearing
+    setTimeout(() => {
+      const ok = confirm("✅ Excel exportado.\n\n¿Querés limpiar los cobros y visitas de la semana para empezar de cero?\n\nEsta acción no se puede deshacer.");
+      if (!ok) return;
+      Promise.all([
+        apiPost({action:"clearAndInsert", sheet:"Cobros", rows:[]}),
+        apiPost({action:"clearAndInsert", sheet:"Visitas", rows:[]}),
+      ]).then(() => {
+        alert("✅ Semana cerrada. Cobros y visitas limpiados.");
+        load();
+      }).catch(e => alert("Error al limpiar: " + e.message));
+    }, 500);
+  };
+
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     <div style={{...S.card,padding:16,background:"#0d1117",border:"1px solid #eab30833",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
       <div>
         <div style={{fontSize:11,color:"#eab308",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>📋 Resumen semanal</div>
         <div style={{fontSize:17,color:"#fff",fontWeight:800}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
       </div>
-      <button style={S.btnGreen} onClick={()=>exportResumen(cobros,visitas,clientes)}>📥 Exportar a Excel</button>
+      <button style={{...S.btnGreen,background:"#7f1d1d22",color:"#f87171",border:"1px solid #ef444433"}} onClick={cerrarSemana}>🔒 Cerrar semana</button>
     </div>
 
     {/* Saldo total cartera */}
