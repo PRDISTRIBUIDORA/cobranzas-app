@@ -240,8 +240,9 @@ function TablaCobroRows({ rows, isAdmin, onEdit, onDelete }) {
 function CobrosLista({ cobros, isAdmin, onEdit, onDelete }) {
   const [verAnteriores, setVerAnteriores] = useState(false);
   const hoy = today();
-  const deHoy = cobros.filter(c => c.fecha === hoy);
-  const anteriores = cobros.filter(c => c.fecha !== hoy);
+  const normFecha = (f) => f ? String(f).split("T")[0] : "";
+  const deHoy = cobros.filter(c => normFecha(c.fecha) === hoy);
+  const anteriores = cobros.filter(c => normFecha(c.fecha) !== hoy);
   return <div>
     {deHoy.length === 0
       ? <div style={{padding:"20px 18px",textAlign:"center",color:"#475569",fontSize:13}}>Sin cobros registrados hoy</div>
@@ -284,8 +285,9 @@ function TablaVisitasRows({ rows, isAdmin, onEdit, onDelete }) {
 function VisitasLista({ rows, isAdmin, onEdit, onDelete }) {
   const [verAnteriores, setVerAnteriores] = useState(false);
   const hoy = today();
-  const deHoy = rows.filter(r => r.fecha === hoy);
-  const anteriores = rows.filter(r => r.fecha !== hoy);
+  const normFecha = (f) => f ? String(f).split("T")[0] : "";
+  const deHoy = rows.filter(r => normFecha(r.fecha) === hoy);
+  const anteriores = rows.filter(r => normFecha(r.fecha) !== hoy);
   return <div>
     {deHoy.length === 0
       ? <div style={{padding:"20px 18px",textAlign:"center",color:"#475569",fontSize:13}}>Sin visitas registradas hoy</div>
