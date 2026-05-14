@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Head from "next/head";
 import * as XLSX from "xlsx";
 
-/* ─── API ─────────────────────────────────────────────── */
 async function apiGet(params = {}) {
   const qs = new URLSearchParams(params).toString();
   const res = await fetch(`/api/sheets?${qs}`);
@@ -19,7 +18,6 @@ async function apiPost(body) {
   return res.json();
 }
 
-/* ─── Constants ───────────────────────────────────────── */
 const ADMIN_PASSWORD = "admin2024";
 const COBRADORES = ["Juan", "Antonella", "Sabrina"];
 const FORMAS_PAGO = ["Efectivo", "Transferencia", "Cheque"];
@@ -27,7 +25,6 @@ const ESTADOS_VISITA = ["Visitado", "Telefónico", "Ocupado", "Cerrado"];
 const fmt = (n) => Number(n||0).toLocaleString("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0});
 const today = () => new Date().toISOString().split("T")[0];
 
-/* ─── Styles ──────────────────────────────────────────── */
 const S = {
   page:     {minHeight:"100vh",background:"#080b10",color:"#e2e8f0",fontFamily:"'DM Sans',system-ui,sans-serif"},
   card:     {background:"#161b22",border:"1px solid rgba(255,255,255,.08)",borderRadius:14},
@@ -41,7 +38,6 @@ const S = {
   td:       {padding:"11px 14px",fontSize:13,color:"#cbd5e1",borderBottom:"1px solid rgba(255,255,255,.04)"},
 };
 
-/* ─── Helpers ─────────────────────────────────────────── */
 function DiaBadge({ dias }) {
   const color  = dias > 60 ? "#f87171" : dias > 30 ? "#fbbf24" : "#34d399";
   const bg     = dias > 60 ? "#7f1d1d22" : dias > 30 ? "#92400e22" : "#06522222";
@@ -50,8 +46,8 @@ function DiaBadge({ dias }) {
 }
 
 function EstadoBadge({ estado }) {
-  const colors = {Visitado:"#34d399",Telefónico:"#38bdf8",Ocupado:"#fbbf24",Cerrado:"#f87171"};
-  const bgs    = {Visitado:"#06522218",Telefónico:"#0c344918",Ocupado:"#92400e18",Cerrado:"#7f1d1d18"};
+  const colors = {Visitado:"#34d399","Telefónico":"#38bdf8",Ocupado:"#fbbf24",Cerrado:"#f87171"};
+  const bgs    = {Visitado:"#06522218","Telefónico":"#0c344918",Ocupado:"#92400e18",Cerrado:"#7f1d1d18"};
   const c = colors[estado]||"#94a3b8";
   return <span style={{background:bgs[estado]||"#1f293718",color:c,border:`1px solid ${c}33`,padding:"2px 10px",borderRadius:99,fontSize:11,fontWeight:600}}>{estado}</span>;
 }
@@ -117,7 +113,6 @@ function ClienteSearch({ clientes, value, onChange }) {
   </div>;
 }
 
-/* ─── Excel parsers ───────────────────────────────────── */
 function parseClientesExcel(workbook) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
@@ -136,26 +131,19 @@ function parseDeudoresExcel(workbook) {
   for (const row of rows) {
     const colA = String(row[0]||"").trim();
     const colB = String(row[1]||"").trim();
-    const colC = String(row[2]||"").trim();
-    const colD = String(row[3]||"").trim();
-
-    // Fila de cliente: col A tiene código numérico, col B tiene nombre, col D tiene saldo
     if (colA && !isNaN(Number(colA)) && Number(colA) > 0 && colB && colB !== "Cliente" && colB !== "Fecha") {
-      // Check if this is a client header row (has nombre in col B and saldo in col D)
       const saldo = parseFloat(String(row[3]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
-      const localidad = String(row[5]||"").trim(); // col F = Localidad
+      const localidad = String(row[4]||"").trim();
       if (saldo > 0 || localidad) {
-        // This is a client header row
         current = { codigo:colA, nombre:colB.replace(/^\+\s*/,""), saldo, localidad };
         deudores.push(current);
       } else if (current) {
-        // This is a detail row
-        let fecha = String(row[2]||"").trim(); // col C = Fecha
+        let fecha = String(row[2]||"").trim();
         if (!isNaN(Number(row[2])) && Number(row[2]) > 40000) {
           const d = XLSX.SSF.parse_date_code(Number(row[2]));
           fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
         }
-        const importe = parseFloat(String(row[5]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
+        const importe = parseFloat(String(row[4]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
         comprobantes.push({ codigo:colA, cliente:current.nombre, fecha, comprobante:String(row[3]||""), importe });
       }
     }
@@ -174,7 +162,6 @@ function exportResumen(cobros, visitas, clientes) {
   const wb = XLSX.utils.book_new();
   const fechaHoy = new Date().toLocaleDateString("es-AR");
   const saldoTotal = clientes.reduce((a,c)=>a+(Number(c.saldo)||0),0);
-
   const resData = [
     [`RESUMEN SEMANAL — ${fechaHoy}`],[],
     ["CARTERA TOTAL", saldoTotal],
@@ -183,20 +170,18 @@ function exportResumen(cobros, visitas, clientes) {
     ["Saldo <30 días", clientes.filter(c=>c.dias<=30).reduce((a,c)=>a+(Number(c.saldo)||0),0)],
     [],[],
     ["COBROS"],[],
-    ["Vendedor","Cliente","Monto","Forma pago","Categoría días","Notas"],
-    ...cobros.map(c=>[c.cobrador,c.cliente,Number(c.monto)||0,c.formaPago,c.diasDeuda,c.notas||""]),
+    ["Vendedor","Cliente","Monto","Forma pago","Categoría días","Notas","Fecha"],
+    ...cobros.map(c=>[c.cobrador,c.cliente,Number(c.monto)||0,c.formaPago,c.diasDeuda,c.notas||"",c.fecha||""]),
     [],[],
     ["VISITAS"],[],
-    ["Vendedor","Cliente","Estado","Notas"],
-    ...visitas.map(v=>[v.cobrador,v.cliente,v.estado,v.notas||""]),
+    ["Vendedor","Cliente","Estado","Notas","Fecha"],
+    ...visitas.map(v=>[v.cobrador,v.cliente,v.estado,v.notas||"",v.fecha||""]),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resData), "Resumen");
-
   const porVendedor = [["Vendedor","<30 días","30-60 días","+60 días","Total"]];
   COBRADORES.forEach(nombre => {
     const cc = cobros.filter(c=>c.cobrador===nombre);
-    porVendedor.push([
-      nombre,
+    porVendedor.push([nombre,
       cc.filter(c=>c.diasDeuda<=30).reduce((a,c)=>a+Number(c.monto),0),
       cc.filter(c=>c.diasDeuda>30&&c.diasDeuda<=60).reduce((a,c)=>a+Number(c.monto),0),
       cc.filter(c=>c.diasDeuda>60).reduce((a,c)=>a+Number(c.monto),0),
@@ -207,7 +192,6 @@ function exportResumen(cobros, visitas, clientes) {
   XLSX.writeFile(wb, `Resumen_${fechaHoy.replace(/\//g,"-")}.xlsx`);
 }
 
-/* ─── LOGIN ───────────────────────────────────────────── */
 function Login({ onLogin, onCancel }) {
   const [pw, setPw] = useState(""), [err, setErr] = useState(false);
   const handle = () => pw === ADMIN_PASSWORD ? onLogin() : setErr(true);
@@ -224,6 +208,95 @@ function Login({ onLogin, onCancel }) {
       <button style={{...S.btnPri,width:"100%",padding:10,marginBottom:8}} onClick={handle}>Ingresar</button>
       <button style={{...S.btnGhost,width:"100%"}} onClick={onCancel}>Cancelar</button>
     </div>
+  </div>;
+}
+
+/* ─── COBROS LISTA (con agrupación por fecha) ─────────── */
+function TablaCobroRows({ rows, isAdmin, onEdit, onDelete }) {
+  if (rows.length === 0) return null;
+  return <div style={{overflowX:"auto"}}>
+    <table style={{width:"100%",borderCollapse:"collapse"}}>
+      <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+        {["Cliente","Monto","Forma pago","Días","Vendedor","Notas",""].map(h=><th key={h} style={S.th}>{h}</th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map(c=><tr key={c.id}>
+          <td style={{...S.td,color:"#fff",fontWeight:600}}>{c.cliente}</td>
+          <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(c.monto)}</td>
+          <td style={{...S.td,color:"#94a3b8"}}>{c.formaPago}</td>
+          <td style={S.td}><DiaBadge dias={Number(c.diasDeuda)||0} /></td>
+          <td style={{...S.td,color:"#94a3b8"}}>{c.cobrador}</td>
+          <td style={{...S.td,color:"#475569",fontSize:12}}>{c.notas||"—"}</td>
+          <td style={S.td}><div style={{display:"flex",gap:5}}>
+            <button style={S.btnGhost} onClick={()=>onEdit(c)}>✏️</button>
+            {isAdmin && <button style={S.btnDanger} onClick={()=>onDelete(c.id)}>🗑</button>}
+          </div></td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
+function CobrosLista({ cobros, isAdmin, onEdit, onDelete }) {
+  const [verAnteriores, setVerAnteriores] = useState(false);
+  const hoy = today();
+  const deHoy = cobros.filter(c => c.fecha === hoy);
+  const anteriores = cobros.filter(c => c.fecha !== hoy);
+  return <div>
+    {deHoy.length === 0
+      ? <div style={{padding:"20px 18px",textAlign:"center",color:"#475569",fontSize:13}}>Sin cobros registrados hoy</div>
+      : <TablaCobroRows rows={deHoy} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />}
+    {anteriores.length > 0 && <div>
+      <button onClick={()=>setVerAnteriores(v=>!v)} style={{width:"100%",padding:"10px 18px",background:"rgba(255,255,255,.03)",border:"none",borderTop:"1px solid rgba(255,255,255,.07)",color:"#475569",fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:10}}>{verAnteriores?"▼":"▶"}</span>
+        {verAnteriores?"Ocultar":"Ver"} cobros anteriores ({anteriores.length})
+      </button>
+      {verAnteriores && <TablaCobroRows rows={anteriores} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />}
+    </div>}
+  </div>;
+}
+
+/* ─── VISITAS LISTA (con agrupación por fecha) ────────── */
+function TablaVisitasRows({ rows, isAdmin, onEdit, onDelete }) {
+  if (rows.length === 0) return null;
+  return <div style={{overflowX:"auto"}}>
+    <table style={{width:"100%",borderCollapse:"collapse"}}>
+      <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+        {["Cliente","Localidad","Estado","Vendedor","Notas","Acciones"].map(h=><th key={h} style={S.th}>{h}</th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map(r=><tr key={r.id}>
+          <td style={{...S.td,color:"#fff",fontWeight:600}}>{r.cliente}</td>
+          <td style={{...S.td,color:"#64748b",fontSize:12}}>{r.localidad||"—"}</td>
+          <td style={S.td}><EstadoBadge estado={r.estado} /></td>
+          <td style={{...S.td,color:"#94a3b8"}}>{r.cobrador||"—"}</td>
+          <td style={{...S.td,color:"#475569",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notas||"—"}</td>
+          <td style={S.td}><div style={{display:"flex",gap:5}}>
+            <button style={S.btnGhost} onClick={()=>onEdit(r)}>✏️</button>
+            {isAdmin && <button style={S.btnDanger} onClick={()=>onDelete(r.id)}>🗑</button>}
+          </div></td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
+function VisitasLista({ rows, isAdmin, onEdit, onDelete }) {
+  const [verAnteriores, setVerAnteriores] = useState(false);
+  const hoy = today();
+  const deHoy = rows.filter(r => r.fecha === hoy);
+  const anteriores = rows.filter(r => r.fecha !== hoy);
+  return <div>
+    {deHoy.length === 0
+      ? <div style={{padding:"20px 18px",textAlign:"center",color:"#475569",fontSize:13}}>Sin visitas registradas hoy</div>
+      : <TablaVisitasRows rows={deHoy} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />}
+    {anteriores.length > 0 && <div>
+      <button onClick={()=>setVerAnteriores(v=>!v)} style={{width:"100%",padding:"10px 18px",background:"rgba(255,255,255,.03)",border:"none",borderTop:"1px solid rgba(255,255,255,.07)",color:"#475569",fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:10}}>{verAnteriores?"▼":"▶"}</span>
+        {verAnteriores?"Ocultar":"Ver"} visitas anteriores ({anteriores.length})
+      </button>
+      {verAnteriores && <TablaVisitasRows rows={anteriores} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />}
+    </div>}
   </div>;
 }
 
@@ -248,7 +321,6 @@ function DeudoresTab({ isAdmin }) {
       ]);
       const deudores = Array.isArray(rd.data) ? rd.data : [];
       const comp = Array.isArray(rcomp.data) ? rcomp.data : [];
-      // Calculate dias from oldest comprobante per client
       const clientesConDias = deudores.map(d => {
         const compCliente = comp.filter(c => String(c.codigo) === String(d.codigo));
         let dias = 0;
@@ -269,13 +341,11 @@ function DeudoresTab({ isAdmin }) {
   const entre3060 = clientes.filter(c => c.dias > 30 && c.dias <= 60).sort((a,b) => b.dias - a.dias);
   const menos30   = clientes.filter(c => c.dias <= 30).sort((a,b) => b.dias - a.dias);
 
-  const filtrados = search
-    ? clientes.filter(c =>
-        c.nombre?.toLowerCase().includes(search.toLowerCase()) ||
-        c.localidad?.toLowerCase().includes(search.toLowerCase()) ||
-        String(c.codigo||"").includes(search)
-      )
-    : null;
+  const filtrados = search ? clientes.filter(c =>
+    c.nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    c.localidad?.toLowerCase().includes(search.toLowerCase()) ||
+    String(c.codigo||"").includes(search)
+  ) : null;
 
   const abrirCobro = (cliente) => {
     setForm({ cliente:cliente.nombre, codigo:cliente.codigo, localidad:cliente.localidad||"", monto:"", formaPago:"", cobrador:"", notas:"", diasDeuda:cliente.dias, saldo:cliente.saldo });
@@ -347,7 +417,6 @@ function DeudoresTab({ isAdmin }) {
   if (loading) return <div style={{padding:40,textAlign:"center",color:"#475569"}}>Cargando…</div>;
 
   return <div>
-    {/* Saldo total */}
     <div style={{...S.card,padding:"14px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
       <div>
         <div style={{fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700}}>Saldo total cartera</div>
@@ -369,12 +438,10 @@ function DeudoresTab({ isAdmin }) {
       </div>
     </div>
 
-    {/* Buscador */}
     <div style={{marginBottom:16}}>
       <input style={S.input} placeholder="🔍 Buscar cliente por nombre, localidad o código…" value={search} onChange={e=>setSearch(e.target.value)} />
     </div>
 
-    {/* Resultados búsqueda */}
     {filtrados && <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
       <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",fontWeight:700,color:"#fff"}}>
         Resultados para "{search}" — {filtrados.length} clientes
@@ -400,14 +467,12 @@ function DeudoresTab({ isAdmin }) {
       </div>
     </div>}
 
-    {/* 3 grupos */}
     {!filtrados && <>
       <Grupo titulo="🔴 Más de 60 días — PRIORIDAD ALTA" lista={mas60} color="red" />
       <Grupo titulo="🟡 Entre 30 y 60 días" lista={entre3060} color="amber" />
       <Grupo titulo="🟢 Menos de 30 días" lista={menos30} color="emerald" />
     </>}
 
-    {/* Cobros registrados */}
     <div style={{...S.card,overflow:"hidden",marginTop:8}}>
       <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",fontWeight:700,color:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <span>💰 Cobros registrados ({cobros.length})</span>
@@ -415,30 +480,9 @@ function DeudoresTab({ isAdmin }) {
       </div>
       {cobros.length === 0
         ? <div style={{padding:32,textAlign:"center",color:"#475569",fontSize:13}}>Sin cobros registrados aún</div>
-        : <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-              {["Cliente","Monto","Forma pago","Días","Vendedor","Notas",""].map(h=><th key={h} style={S.th}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {cobros.map(c=><tr key={c.id}>
-                <td style={{...S.td,color:"#fff",fontWeight:600}}>{c.cliente}</td>
-                <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(c.monto)}</td>
-                <td style={{...S.td,color:"#94a3b8"}}>{c.formaPago}</td>
-                <td style={S.td}><DiaBadge dias={Number(c.diasDeuda)||0} /></td>
-                <td style={{...S.td,color:"#94a3b8"}}>{c.cobrador}</td>
-                <td style={{...S.td,color:"#475569",fontSize:12}}>{c.notas||"—"}</td>
-                <td style={S.td}><div style={{display:"flex",gap:5}}>
-                  <button style={S.btnGhost} onClick={()=>{ setForm({...c}); setEditCobro(c); }}>✏️</button>
-                  {isAdmin && <button style={S.btnDanger} onClick={()=>eliminarCobro(c.id)}>🗑</button>}
-                </div></td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>}
+        : <CobrosLista cobros={cobros} isAdmin={isAdmin} onEdit={c=>{setForm({...c});setEditCobro(c);}} onDelete={eliminarCobro} />}
     </div>
 
-    {/* Modal nuevo cobro */}
     {modalCobro && <Modal title={`Registrar cobro — ${modalCobro.nombre}`} onClose={()=>setModalCobro(null)}>
       <div style={{...S.card,padding:"10px 14px",marginBottom:14,background:modalCobro.dias>60?"#7f1d1d22":modalCobro.dias>30?"#92400e22":"#06522222"}}>
         <div style={{fontSize:12,color:"#94a3b8"}}>Categoría detectada automáticamente</div>
@@ -464,7 +508,6 @@ function DeudoresTab({ isAdmin }) {
       </div>
     </Modal>}
 
-    {/* Modal editar cobro */}
     {editCobro && <Modal title="Editar cobro" onClose={()=>setEditCobro(null)}>
       <Field label="Monto *"><input style={S.input} type="number" value={form.monto||""} onChange={e=>setForm(p=>({...p,monto:e.target.value}))} /></Field>
       <Field label="Forma de pago *">
@@ -537,29 +580,11 @@ function VisitasTab({ isAdmin }) {
       <button style={S.btnPri} onClick={()=>{ setForm({cliente:"",localidad:"",estado:"Visitado",cobrador:"",notas:""}); setModal("add"); }}>+ Nueva visita</button>
     </div>
     <div style={{...S.card,overflow:"hidden"}}>
-      {loading ? <div style={{padding:40,textAlign:"center",color:"#475569"}}>Cargando…</div> :
-      <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-            {["Cliente","Localidad","Estado","Vendedor","Notas","Acciones"].map(h=><th key={h} style={S.th}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {filtered.length === 0
-              ? <tr><td colSpan={6} style={{...S.td,textAlign:"center",padding:32,color:"#475569"}}>Sin visitas registradas</td></tr>
-              : filtered.map(r=><tr key={r.id}>
-                <td style={{...S.td,color:"#fff",fontWeight:600}}>{r.cliente}</td>
-                <td style={{...S.td,color:"#64748b",fontSize:12}}>{r.localidad||"—"}</td>
-                <td style={S.td}><EstadoBadge estado={r.estado} /></td>
-                <td style={{...S.td,color:"#94a3b8"}}>{r.cobrador||"—"}</td>
-                <td style={{...S.td,color:"#475569",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notas||"—"}</td>
-                <td style={S.td}><div style={{display:"flex",gap:5}}>
-                  <button style={S.btnGhost} onClick={()=>{ setForm({...r}); setModal(r); }}>✏️</button>
-                  {isAdmin && <button style={S.btnDanger} onClick={async()=>{ if(confirm("¿Eliminar?")){ await apiPost({action:"deleteRow",sheet:"Visitas",id:r.id}); load(); } }}>🗑</button>}
-                </div></td>
-              </tr>)}
-          </tbody>
-        </table>
-      </div>}
+      {loading
+        ? <div style={{padding:40,textAlign:"center",color:"#475569"}}>Cargando…</div>
+        : <VisitasLista rows={filtered} isAdmin={isAdmin}
+            onEdit={r=>{setForm({...r});setModal(r);}}
+            onDelete={async id=>{ if(confirm("¿Eliminar?")){ await apiPost({action:"deleteRow",sheet:"Visitas",id}); load(); } }} />}
     </div>
 
     {modal && <Modal title={modal==="add"?"Nueva visita":"Editar visita"} onClose={()=>setModal(null)}>
@@ -588,7 +613,7 @@ function VisitasTab({ isAdmin }) {
   </div>;
 }
 
-/* ─── CLIENTES TAB (Admin) ────────────────────────────── */
+/* ─── CLIENTES TAB ────────────────────────────────────── */
 function ClientesTab() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -628,7 +653,7 @@ function ClientesTab() {
         </tr></thead>
         <tbody>
           {filtered.length===0
-            ? <tr><td colSpan={4} style={{...S.td,textAlign:"center",padding:32,color:"#475569"}}>Sin clientes — pegá tu lista en Google Sheets o usá Importar</td></tr>
+            ? <tr><td colSpan={4} style={{...S.td,textAlign:"center",padding:32,color:"#475569"}}>Sin clientes</td></tr>
             : filtered.map(r=><tr key={r.id}>
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace"}}>{r.codigo||"—"}</td>
               <td style={{...S.td,color:"#fff",fontWeight:600}}>{r.nombre}</td>
@@ -653,7 +678,7 @@ function ClientesTab() {
   </div>;
 }
 
-/* ─── IMPORTAR TAB (Admin) ────────────────────────────── */
+/* ─── IMPORTAR TAB ────────────────────────────────────── */
 function ImportarTab() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -715,7 +740,7 @@ function ImportarTab() {
   </div>;
 }
 
-/* ─── RESUMEN TAB (Admin) ─────────────────────────────── */
+/* ─── RESUMEN TAB ─────────────────────────────────────── */
 function ResumenTab() {
   const [cobros, setCobros] = useState([]);
   const [visitas, setVisitas] = useState([]);
@@ -771,9 +796,7 @@ function ResumenTab() {
   }));
 
   const cerrarSemana = async () => {
-    // Step 1: export
     exportResumen(cobros, visitas, clientes);
-    // Step 2: confirm before clearing
     setTimeout(() => {
       const ok = confirm("✅ Excel exportado.\n\n¿Querés limpiar los cobros y visitas de la semana para empezar de cero?\n\nEsta acción no se puede deshacer.");
       if (!ok) return;
@@ -796,7 +819,6 @@ function ResumenTab() {
       <button style={{...S.btnGreen,background:"#7f1d1d22",color:"#f87171",border:"1px solid #ef444433"}} onClick={cerrarSemana}>🔒 Cerrar semana</button>
     </div>
 
-    {/* Saldo total cartera */}
     <div style={{...S.card,padding:"16px 20px",border:"1px solid rgba(255,255,255,.12)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
       <div>
         <div style={{fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700}}>Saldo total cartera</div>
@@ -818,7 +840,6 @@ function ResumenTab() {
       </div>
     </div>
 
-    {/* Cobrado por categoría */}
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <StatCard label="Total cobrado" value={fmt(cobradoTotal)} color="emerald" />
       <StatCard label="Cobrado +60 días" value={fmt(cobradoMas60)} sub={`Saldo: ${fmt(saldoMas60)}`} color="red" />
@@ -826,7 +847,6 @@ function ResumenTab() {
       <StatCard label="Cobrado <30 días" value={fmt(cobradoMenos30)} sub={`Saldo: ${fmt(saldoMenos30)}`} color="sky" />
     </div>
 
-    {/* Tabla totales por vendedor */}
     <div style={S.card}>
       <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",fontWeight:700,color:"#fff",fontSize:14}}>👥 Totales por vendedor</div>
       <div style={{overflowX:"auto"}}>
@@ -854,7 +874,6 @@ function ResumenTab() {
       </div>
     </div>
 
-    {/* Detalle por vendedor */}
     {resumen.map(r => (r.cobros.length > 0 || r.visitas.length > 0) && <div key={r.nombre} style={S.card}>
       <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",fontWeight:700,color:"#fbbf24",fontSize:14}}>
         👤 {r.nombre} — {fmt(r.menos30+r.entre3060+r.mas60)} cobrado
@@ -863,7 +882,7 @@ function ResumenTab() {
         <div style={{padding:"8px 18px",fontSize:11,color:"#475569",fontWeight:700,textTransform:"uppercase",background:"rgba(255,255,255,.02)"}}>Cobros</div>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-            {["Cliente","Monto","Forma pago","Días","Notas"].map(h=><th key={h} style={S.th}>{h}</th>)}
+            {["Cliente","Monto","Forma pago","Días","Fecha","Notas"].map(h=><th key={h} style={S.th}>{h}</th>)}
           </tr></thead>
           <tbody>
             {r.cobros.map(c=><tr key={c.id}>
@@ -871,6 +890,7 @@ function ResumenTab() {
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(c.monto)}</td>
               <td style={{...S.td,color:"#94a3b8"}}>{c.formaPago}</td>
               <td style={S.td}><DiaBadge dias={Number(c.diasDeuda)||0} /></td>
+              <td style={{...S.td,color:"#64748b",fontSize:12}}>{c.fecha||"—"}</td>
               <td style={{...S.td,color:"#475569",fontSize:12}}>{c.notas||"—"}</td>
             </tr>)}
           </tbody>
@@ -880,12 +900,13 @@ function ResumenTab() {
         <div style={{padding:"8px 18px",fontSize:11,color:"#475569",fontWeight:700,textTransform:"uppercase",background:"rgba(255,255,255,.02)",borderTop:"1px solid rgba(255,255,255,.04)"}}>Visitas</div>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-            {["Cliente","Estado","Notas"].map(h=><th key={h} style={S.th}>{h}</th>)}
+            {["Cliente","Estado","Fecha","Notas"].map(h=><th key={h} style={S.th}>{h}</th>)}
           </tr></thead>
           <tbody>
             {r.visitas.map(v=><tr key={v.id}>
               <td style={{...S.td,color:"#fff",fontWeight:600}}>{v.cliente}</td>
               <td style={S.td}><EstadoBadge estado={v.estado} /></td>
+              <td style={{...S.td,color:"#64748b",fontSize:12}}>{v.fecha||"—"}</td>
               <td style={{...S.td,color:"#475569",fontSize:12}}>{v.notas||"—"}</td>
             </tr>)}
           </tbody>
