@@ -123,6 +123,36 @@ function parseClientesExcel(workbook) {
   }).map(r => ({ codigo:String(r[0]).trim(), nombre:String(r[1]).trim(), localidad:String(r[2]||"").trim() }));
 }
 
+// ───────────────────────────────────────────────────────────────────
+// Helper: parsea una fecha del Excel a formato ISO yyyy-mm-dd
+// Acepta: número serial Excel, string "dd/mm/yyyy", "dd-mm-yyyy", "yyyy-mm-dd"
+// ───────────────────────────────────────────────────────────────────
+function parseFechaCell(cell) {
+  if (cell === null || cell === undefined || cell === "") return "";
+  // Si ya es Date object
+  if (cell instanceof Date) {
+    return `${cell.getFullYear()}-${String(cell.getMonth()+1).padStart(2,"0")}-${String(cell.getDate()).padStart(2,"0")}`;
+  }
+  // Si es número serial de Excel
+  if (typeof cell === "number" && cell > 40000) {
+    const d = XLSX.SSF.parse_date_code(cell);
+    return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+  }
+  const s = String(cell).trim();
+  if (!s) return "";
+  // ya en formato ISO yyyy-mm-dd
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+    const [yyyy, mm, dd] = s.split("-");
+    return `${yyyy}-${mm.padStart(2,"0")}-${dd.padStart(2,"0")}`;
+  }
+  // dd/mm/yyyy o dd-mm-yyyy
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  }
+  return s; // dejar tal cual si no matchea ningún formato conocido
+}
+
 function parseDeudoresExcel(workbook) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
@@ -177,11 +207,7 @@ function parseDeudoresExcel(workbook) {
     else if (colB && !isNaN(Number(colB)) && Number(colB) > 0 && colA === "") {
       const codigo = colB;
       if (current && !current.codigo) current.codigo = codigo;
-      let fecha = String(row[2]||"").trim();
-      if (!isNaN(Number(row[2])) && Number(row[2]) > 40000) {
-        const d = XLSX.SSF.parse_date_code(Number(row[2]));
-        fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
-      }
+      const fecha = parseFechaCell(row[2]);
       let importe = 0;
       for (let i = row.length - 1; i >= 4; i--) {
         const v = toNum(row[i]);
@@ -193,11 +219,7 @@ function parseDeudoresExcel(workbook) {
     else if (colA === "" && colB === "" && !isNaN(Number(String(row[2]||"").trim())) && Number(String(row[2]||"").trim()) > 0) {
       const codigo = String(row[2]).trim();
       if (current && !current.codigo) current.codigo = codigo;
-      let fecha = String(row[3]||"").trim();
-      if (!isNaN(Number(row[3])) && Number(row[3]) > 40000) {
-        const d = XLSX.SSF.parse_date_code(Number(row[3]));
-        fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
-      }
+      const fecha = parseFechaCell(row[3]);
       let importe = 0;
       for (let i = row.length - 1; i >= 5; i--) {
         const v = toNum(row[i]);
@@ -211,7 +233,11 @@ function parseDeudoresExcel(workbook) {
 
 function calcDias(fechaStr) {
   if (!fechaStr) return 0;
-  const fecha = new Date(fechaStr);
+  // Asegurar formato ISO si viene como dd/mm/yyyy (defensa adicional)
+  let s = String(fechaStr).trim();
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) s = `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  const fecha = new Date(s);
   if (isNaN(fecha)) return 0;
   return Math.floor((Date.now() - fecha) / 86400000);
 }
@@ -762,6 +788,7 @@ function ImportarTab() {
       const wb = XLSX.read(await file.arrayBuffer());
       const { deudores, comprobantes } = parseDeudoresExcel(wb);
       if (!deudores.length) throw new Error("No se encontraron deudores");
+      if (!comprobantes.length) throw new Error(`Se encontraron ${deudores.length} deudores pero 0 comprobantes — revisar formato del Excel`);
       await apiPost({action:"bulkUpsert",sheet:"Deudores",rows:deudores});
       await apiPost({action:"clearAndInsert",sheet:"Comprobantes",rows:comprobantes});
       setStatus({type:"success", msg:`✅ ${deudores.length} deudores actualizados, ${comprobantes.length} comprobantes cargados`});
