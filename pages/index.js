@@ -128,24 +128,82 @@ function parseDeudoresExcel(workbook) {
   const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
   const deudores = [], comprobantes = [];
   let current = null;
+
+  const toNum = (v) => parseFloat(String(v||"0").replace(/[^\d.,\-]/g,"").replace(",",".")) || 0;
+  const isNum = (v) => { const n = toNum(v); return !isNaN(n) && n !== 0; };
+
   for (const row of rows) {
     const colA = String(row[0]||"").trim();
     const colB = String(row[1]||"").trim();
-    if (colA && !isNaN(Number(colA)) && Number(colA) > 0 && colB && colB !== "Cliente" && colB !== "Fecha") {
-      const saldo = parseFloat(String(row[3]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
-      const localidad = String(row[4]||"").trim();
-      if (saldo > 0 || localidad) {
-        current = { codigo:colA, nombre:colB.replace(/^\+\s*/,""), saldo, localidad };
-        deudores.push(current);
-      } else if (current) {
-        let fecha = String(row[2]||"").trim();
-        if (!isNaN(Number(row[2])) && Number(row[2]) > 40000) {
-          const d = XLSX.SSF.parse_date_code(Number(row[2]));
-          fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+
+    // Skip pure header rows
+    if (["cliente","nombre","detalle","fecha","comprobante","monto","saldo"].includes(colA.toLowerCase())) continue;
+
+    // CLIENT ROW — col A is numeric code (old format)
+    if (colA && !isNaN(Number(colA)) && Number(colA) > 0 && colB && isNaN(Number(colB))) {
+      const saldo = toNum(row[3]);
+      // Localidad: scan from right for non-numeric non-province text
+      let localidad = "";
+      for (let i = Math.min(row.length-1, 8); i >= 4; i--) {
+        const v = String(row[i]||"").trim();
+        if (v && isNaN(Number(v)) && !["entre ríos","corrientes","buenos aires","santa fe","córdoba","mendoza"].includes(v.toLowerCase())) {
+          localidad = v; break;
         }
-        const importe = parseFloat(String(row[4]||"0").replace(/[^\d.,]/g,"").replace(",",".")) || 0;
-        comprobantes.push({ codigo:colA, cliente:current.nombre, fecha, comprobante:String(row[3]||""), importe });
       }
+      if (!localidad) localidad = String(row[5]||row[4]||"").trim();
+      current = { codigo:colA, nombre:colB.replace(/^\+\s*/,""), saldo, localidad };
+      deudores.push(current);
+    }
+    // CLIENT ROW — col A is text name (new format, code comes from detail)
+    else if (colA && isNaN(Number(colA)) && colA.length > 2) {
+      // Find saldo: first large numeric in row (skip col B which is usually Monto=empty)
+      let saldo = 0;
+      for (let i = 2; i < Math.min(row.length, 8); i++) {
+        const v = toNum(row[i]);
+        if (v > 0) { saldo = v; break; }
+      }
+      // Find localidad: scan right-to-left for last non-numeric text (not province names)
+      let localidad = "";
+      for (let i = Math.min(row.length-1, 9); i >= 3; i--) {
+        const v = String(row[i]||"").trim();
+        if (v && isNaN(Number(v)) && v.length > 2 && !["entre ríos","corrientes","buenos aires","santa fe","córdoba","mendoza","misiones","formosa"].includes(v.toLowerCase())) {
+          localidad = v; break;
+        }
+      }
+      current = { codigo:null, nombre:colA.replace(/^\+\s*/,""), saldo, localidad };
+      deudores.push(current);
+    }
+    // DETAIL ROW — col B is numeric code (format después de borrar columnas)
+    else if (colB && !isNaN(Number(colB)) && Number(colB) > 0 && colA === "") {
+      const codigo = colB;
+      if (current && !current.codigo) current.codigo = codigo;
+      let fecha = String(row[2]||"").trim();
+      if (!isNaN(Number(row[2])) && Number(row[2]) > 40000) {
+        const d = XLSX.SSF.parse_date_code(Number(row[2]));
+        fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+      }
+      let importe = 0;
+      for (let i = row.length - 1; i >= 4; i--) {
+        const v = toNum(row[i]);
+        if (v > 0) { importe = v; break; }
+      }
+      if (current && fecha) comprobantes.push({ codigo, cliente:current.nombre, fecha, comprobante:String(row[3]||""), importe });
+    }
+    // DETAIL ROW — col C es el código (formato original sin borrar columnas)
+    else if (colA === "" && colB === "" && !isNaN(Number(String(row[2]||"").trim())) && Number(String(row[2]||"").trim()) > 0) {
+      const codigo = String(row[2]).trim();
+      if (current && !current.codigo) current.codigo = codigo;
+      let fecha = String(row[3]||"").trim();
+      if (!isNaN(Number(row[3])) && Number(row[3]) > 40000) {
+        const d = XLSX.SSF.parse_date_code(Number(row[3]));
+        fecha = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+      }
+      let importe = 0;
+      for (let i = row.length - 1; i >= 5; i--) {
+        const v = toNum(row[i]);
+        if (v > 0) { importe = v; break; }
+      }
+      if (current && fecha) comprobantes.push({ codigo, cliente:current.nombre, fecha, comprobante:String(row[4]||""), importe });
     }
   }
   return { deudores, comprobantes };
