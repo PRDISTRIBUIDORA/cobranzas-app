@@ -80,9 +80,10 @@ function Field({ label, children }) {
 function ClienteSearch({ clientes, value, onChange }) {
   const [q, setQ] = useState(value||"");
   const [open, setOpen] = useState(false);
+  const ql = q.toLowerCase();
   const filtered = q.length > 0 ? clientes.filter(c =>
-    c.nombre?.toLowerCase().includes(q.toLowerCase()) ||
-    c.localidad?.toLowerCase().includes(q.toLowerCase()) ||
+    String(c.nombre||"").toLowerCase().includes(ql) ||
+    String(c.localidad||"").toLowerCase().includes(ql) ||
     String(c.codigo||"").includes(q)
   ).slice(0, 20) : [];
   const selected = clientes.find(c => c.nombre === value);
@@ -427,9 +428,10 @@ function DeudoresTab({ isAdmin }) {
   const entre3060 = clientes.filter(c => c.dias > 30 && c.dias <= 60).sort((a,b) => b.dias - a.dias);
   const menos30   = clientes.filter(c => c.dias <= 30).sort((a,b) => b.dias - a.dias);
 
+  const sl = search.toLowerCase();
   const filtrados = search ? clientes.filter(c =>
-    c.nombre?.toLowerCase().includes(search.toLowerCase()) ||
-    c.localidad?.toLowerCase().includes(search.toLowerCase()) ||
+    String(c.nombre||"").toLowerCase().includes(sl) ||
+    String(c.localidad||"").toLowerCase().includes(sl) ||
     String(c.codigo||"").includes(search)
   ) : null;
 
@@ -641,7 +643,8 @@ function VisitasTab({ isAdmin }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = rows.filter(r => r.cliente?.toLowerCase().includes(search.toLowerCase()) || r.localidad?.toLowerCase().includes(search.toLowerCase()));
+  const sl = search.toLowerCase();
+  const filtered = rows.filter(r => String(r.cliente||"").toLowerCase().includes(sl) || String(r.localidad||"").toLowerCase().includes(sl));
 
   const save = async () => {
     if (!form.cliente) return;
@@ -715,7 +718,8 @@ function ClientesTab() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = rows.filter(r => r.nombre?.toLowerCase().includes(search.toLowerCase()) || r.localidad?.toLowerCase().includes(search.toLowerCase()) || String(r.codigo||"").includes(search));
+  const sl = search.toLowerCase();
+  const filtered = rows.filter(r => String(r.nombre||"").toLowerCase().includes(sl) || String(r.localidad||"").toLowerCase().includes(sl) || String(r.codigo||"").includes(search));
 
   const save = async () => {
     if (!form.nombre) return; setSaving(true);
