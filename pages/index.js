@@ -101,7 +101,7 @@ function ClienteSearch({ clientes, value, onChange }) {
       {filtered.length === 0
         ? <div style={{padding:"10px 14px",color:"#475569",fontSize:13}}>Sin resultados</div>
         : filtered.map(c => <div key={c.id}
-            onMouseDown={()=>{ onChange(c.nombre, c.localidad||""); setQ(c.nombre); setOpen(false); }}
+            onMouseDown={()=>{ onChange(c.nombre, c.localidad||"", c.codigo||""); setQ(c.nombre); setOpen(false); }}
             style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:13,color:"#fff"}}
             onMouseEnter={e=>e.currentTarget.style.background="#262d38"}
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}
@@ -263,10 +263,13 @@ function exportResumen(cobros, visitas, clientes) {
     ...visitas.map(v=>[v.cobrador,v.cliente,v.estado,v.notas||"",v.fecha||""]),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resData), "Resumen");
-  const porVendedor = [["Vendedor","<30 días","30-60 días","+60 días","Total"]];
+  const porVendedor = [["Vendedor","Visitas","Cobros","<30 días","30-60 días","+60 días","Total cobrado"]];
   COBRADORES.forEach(nombre => {
     const cc = cobros.filter(c=>c.cobrador===nombre);
+    const vv = visitas.filter(v=>v.cobrador===nombre);
     porVendedor.push([nombre,
+      vv.length,
+      cc.length,
       cc.filter(c=>c.diasDeuda<=30).reduce((a,c)=>a+Number(c.monto),0),
       cc.filter(c=>c.diasDeuda>30&&c.diasDeuda<=60).reduce((a,c)=>a+Number(c.monto),0),
       cc.filter(c=>c.diasDeuda>60).reduce((a,c)=>a+Number(c.monto),0),
@@ -274,6 +277,28 @@ function exportResumen(cobros, visitas, clientes) {
     ]);
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(porVendedor), "Por Vendedor");
+
+  // Hoja de clientes SIN ACCIÓN
+  const codigosAcc = new Set();
+  const nombresAcc = new Set();
+  const normN = (n) => String(n||"").toLowerCase().trim();
+  cobros.forEach(c => { if (c.codigo) codigosAcc.add(String(c.codigo)); if (c.cliente) nombresAcc.add(normN(c.cliente)); });
+  visitas.forEach(v => { if (v.codigo) codigosAcc.add(String(v.codigo)); if (v.cliente) nombresAcc.add(normN(v.cliente)); });
+  const sinAccion = clientes.filter(c => {
+    if (c.codigo && codigosAcc.has(String(c.codigo))) return false;
+    if (c.nombre && nombresAcc.has(normN(c.nombre))) return false;
+    return true;
+  }).sort((a,b) => (b.dias||0) - (a.dias||0));
+  const sinAccionData = [
+    ["CLIENTES SIN ACCIÓN — sin cobros ni visitas esta semana"],[],
+    ["Total clientes sin acción", sinAccion.length],
+    ["Saldo total sin trabajar", sinAccion.reduce((a,c)=>a+(Number(c.saldo)||0),0)],
+    [],
+    ["Código","Cliente","Localidad","Días","Saldo"],
+    ...sinAccion.map(c=>[c.codigo||"", c.nombre||"", c.localidad||"", c.dias||0, Number(c.saldo)||0]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sinAccionData), "Sin Acción");
+
   XLSX.writeFile(wb, `Resumen_${fechaHoy.replace(/\//g,"-")}.xlsx`);
 }
 
@@ -391,8 +416,10 @@ function VisitasLista({ rows, isAdmin, onEdit, onDelete }) {
 function DeudoresTab({ isAdmin }) {
   const [clientes, setClientes] = useState([]);
   const [cobros, setCobros] = useState([]);
+  const [visitas, setVisitas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [verConAccion, setVerConAccion] = useState(false);
   const [modalCobro, setModalCobro] = useState(null);
   const [editCobro, setEditCobro] = useState(null);
   const [form, setForm] = useState({});
@@ -401,9 +428,10 @@ function DeudoresTab({ isAdmin }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rd, rc, rcomp] = await Promise.all([
+      const [rd, rc, rv, rcomp] = await Promise.all([
         apiGet({action:"getData",sheet:"Deudores"}),
         apiGet({action:"getData",sheet:"Cobros"}),
+        apiGet({action:"getData",sheet:"Visitas"}),
         apiGet({action:"getData",sheet:"Comprobantes"}),
       ]);
       const deudores = Array.isArray(rd.data) ? rd.data : [];
@@ -419,16 +447,40 @@ function DeudoresTab({ isAdmin }) {
       });
       setClientes(clientesConDias);
       setCobros(Array.isArray(rc.data) ? rc.data : []);
+      setVisitas(Array.isArray(rv.data) ? rv.data : []);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const mas60     = clientes.filter(c => c.dias > 60).sort((a,b) => b.dias - a.dias);
-  const entre3060 = clientes.filter(c => c.dias > 30 && c.dias <= 60).sort((a,b) => b.dias - a.dias);
-  const menos30   = clientes.filter(c => c.dias <= 30).sort((a,b) => b.dias - a.dias);
+  // Set de códigos y nombres con acción (cobro o visita)
+  const codigosConAccion = new Set();
+  const nombresConAccion = new Set();
+  const normNombre = (n) => String(n||"").toLowerCase().trim();
+  cobros.forEach(c => {
+    if (c.codigo) codigosConAccion.add(String(c.codigo));
+    if (c.cliente) nombresConAccion.add(normNombre(c.cliente));
+  });
+  visitas.forEach(v => {
+    if (v.codigo) codigosConAccion.add(String(v.codigo));
+    if (v.cliente) nombresConAccion.add(normNombre(v.cliente));
+  });
+  const tieneAccion = (cli) => {
+    if (cli.codigo && codigosConAccion.has(String(cli.codigo))) return true;
+    if (cli.nombre && nombresConAccion.has(normNombre(cli.nombre))) return true;
+    return false;
+  };
+
+  // Clientes visibles según toggle (por default: solo sin acción)
+  const clientesVisibles = verConAccion ? clientes : clientes.filter(c => !tieneAccion(c));
+  const cantConAccion = clientes.filter(tieneAccion).length;
+
+  const mas60     = clientesVisibles.filter(c => c.dias > 60).sort((a,b) => b.dias - a.dias);
+  const entre3060 = clientesVisibles.filter(c => c.dias > 30 && c.dias <= 60).sort((a,b) => b.dias - a.dias);
+  const menos30   = clientesVisibles.filter(c => c.dias <= 30).sort((a,b) => b.dias - a.dias);
 
   const sl = search.toLowerCase();
+  // Búsqueda siempre ve TODOS los clientes (incluidos los con acción) para poder agregar cobros extras
   const filtrados = search ? clientes.filter(c =>
     String(c.nombre||"").toLowerCase().includes(sl) ||
     String(c.localidad||"").toLowerCase().includes(sl) ||
@@ -486,7 +538,10 @@ function DeudoresTab({ isAdmin }) {
           <tbody>
             {lista.map(c=><tr key={c.id}>
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontSize:11}}>{c.codigo}</td>
-              <td style={{...S.td,color:"#fff",fontWeight:600}}>{c.nombre}</td>
+              <td style={{...S.td,color:"#fff",fontWeight:600}}>
+                {c.nombre}
+                {tieneAccion(c) && <span style={{marginLeft:8,fontSize:10,color:"#34d399",background:"#06522233",border:"1px solid #10b98155",padding:"2px 6px",borderRadius:99,fontWeight:700}}>✓ CARGADO</span>}
+              </td>
               <td style={{...S.td,color:"#64748b",fontSize:12}}>{c.localidad||"—"}</td>
               <td style={S.td}><DiaBadge dias={c.dias} /></td>
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(c.saldo)}</td>
@@ -530,6 +585,15 @@ function DeudoresTab({ isAdmin }) {
       <input style={S.input} placeholder="🔍 Buscar cliente por nombre, localidad o código…" value={search} onChange={e=>setSearch(e.target.value)} />
     </div>
 
+    {cantConAccion > 0 && !search && <div style={{marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"rgba(52,211,153,.06)",border:"1px solid #10b98122",borderRadius:8,flexWrap:"wrap",gap:8}}>
+      <div style={{fontSize:12,color:"#94a3b8"}}>
+        <span style={{color:"#34d399",fontWeight:700}}>{cantConAccion} clientes</span> con acción registrada esta semana (ocultos de la lista)
+      </div>
+      <button onClick={()=>setVerConAccion(v=>!v)} style={{background:verConAccion?"#10b98133":"transparent",color:"#34d399",border:"1px solid #10b98155",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+        {verConAccion ? "🙈 Ocultarlos de nuevo" : "👁 Ver clientes con acción"}
+      </button>
+    </div>}
+
     {filtrados && <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
       <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",fontWeight:700,color:"#fff"}}>
         Resultados para "{search}" — {filtrados.length} clientes
@@ -544,7 +608,10 @@ function DeudoresTab({ isAdmin }) {
               ? <tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#475569"}}>Sin resultados</td></tr>
               : filtrados.map(c=><tr key={c.id}>
                 <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontSize:11}}>{c.codigo}</td>
-                <td style={{...S.td,color:"#fff",fontWeight:600}}>{c.nombre}</td>
+                <td style={{...S.td,color:"#fff",fontWeight:600}}>
+                  {c.nombre}
+                  {tieneAccion(c) && <span style={{marginLeft:8,fontSize:10,color:"#34d399",background:"#06522233",border:"1px solid #10b98155",padding:"2px 6px",borderRadius:99,fontWeight:700}}>✓ CARGADO</span>}
+                </td>
                 <td style={{...S.td,color:"#64748b",fontSize:12}}>{c.localidad||"—"}</td>
                 <td style={S.td}><DiaBadge dias={c.dias} /></td>
                 <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(c.saldo)}</td>
@@ -666,7 +733,7 @@ function VisitasTab({ isAdmin }) {
     </div>
     <div style={{display:"flex",gap:8,marginBottom:14}}>
       <input style={{...S.input,flex:1}} placeholder="🔍 Buscar cliente…" value={search} onChange={e=>setSearch(e.target.value)} />
-      <button style={S.btnPri} onClick={()=>{ setForm({cliente:"",localidad:"",estado:"Visitado",cobrador:"",notas:""}); setModal("add"); }}>+ Nueva visita</button>
+      <button style={S.btnPri} onClick={()=>{ setForm({cliente:"",codigo:"",localidad:"",estado:"Visitado",cobrador:"",notas:""}); setModal("add"); }}>+ Nueva visita</button>
     </div>
     <div style={{...S.card,overflow:"hidden"}}>
       {loading
@@ -679,7 +746,7 @@ function VisitasTab({ isAdmin }) {
     {modal && <Modal title={modal==="add"?"Nueva visita":"Editar visita"} onClose={()=>setModal(null)}>
       <Field label="Cliente *">
         {clientes.length > 0
-          ? <ClienteSearch clientes={clientes} value={form.cliente||""} onChange={(nombre,localidad)=>setForm(p=>({...p,cliente:nombre,localidad}))} />
+          ? <ClienteSearch clientes={clientes} value={form.cliente||""} onChange={(nombre,localidad,codigo)=>setForm(p=>({...p,cliente:nombre,localidad,codigo}))} />
           : <input style={S.input} value={form.cliente||""} onChange={e=>setForm(p=>({...p,cliente:e.target.value}))} />}
       </Field>
       <Field label="Estado">
@@ -886,6 +953,19 @@ function ResumenTab() {
     mas60:     cobros.filter(c=>c.cobrador===nombre&&Number(c.diasDeuda)>60).reduce((a,c)=>a+Number(c.monto),0),
   }));
 
+  // Clientes SIN ACCIÓN (no aparecen ni en Cobros ni en Visitas de esta semana)
+  const codigosAcc = new Set();
+  const nombresAcc = new Set();
+  const normN = (n) => String(n||"").toLowerCase().trim();
+  cobros.forEach(c => { if (c.codigo) codigosAcc.add(String(c.codigo)); if (c.cliente) nombresAcc.add(normN(c.cliente)); });
+  visitas.forEach(v => { if (v.codigo) codigosAcc.add(String(v.codigo)); if (v.cliente) nombresAcc.add(normN(v.cliente)); });
+  const sinAccion = clientes.filter(c => {
+    if (c.codigo && codigosAcc.has(String(c.codigo))) return false;
+    if (c.nombre && nombresAcc.has(normN(c.nombre))) return false;
+    return true;
+  }).sort((a,b) => b.dias - a.dias);
+  const saldoSinAccion = sinAccion.reduce((a,c)=>a+c.saldo,0);
+
   const cerrarSemana = async () => {
     exportResumen(cobros, visitas, clientes);
     setTimeout(() => {
@@ -943,11 +1023,13 @@ function ResumenTab() {
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-            {["Vendedor","🟢 <30 días","🟡 30-60 días","🔴 +60 días","Total cobrado"].map(h=><th key={h} style={S.th}>{h}</th>)}
+            {["Vendedor","📍 Visitas","💰 Cobros","🟢 <30 días","🟡 30-60 días","🔴 +60 días","Total cobrado"].map(h=><th key={h} style={S.th}>{h}</th>)}
           </tr></thead>
           <tbody>
             {resumen.map(r=><tr key={r.nombre}>
               <td style={{...S.td,color:"#fff",fontWeight:600}}>{r.nombre}</td>
+              <td style={{...S.td,color:"#38bdf8",fontFamily:"monospace",fontWeight:700}}>{r.visitas.length}</td>
+              <td style={{...S.td,color:"#c084fc",fontFamily:"monospace",fontWeight:700}}>{r.cobros.length}</td>
               <td style={{...S.td,color:"#34d399",fontFamily:"monospace"}}>{fmt(r.menos30)}</td>
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace"}}>{fmt(r.entre3060)}</td>
               <td style={{...S.td,color:"#f87171",fontFamily:"monospace"}}>{fmt(r.mas60)}</td>
@@ -955,6 +1037,8 @@ function ResumenTab() {
             </tr>)}
             <tr style={{borderTop:"2px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.02)"}}>
               <td style={{...S.td,color:"#fff",fontWeight:700}}>TOTAL</td>
+              <td style={{...S.td,color:"#38bdf8",fontFamily:"monospace",fontWeight:700}}>{visitas.length}</td>
+              <td style={{...S.td,color:"#c084fc",fontFamily:"monospace",fontWeight:700}}>{cobros.length}</td>
               <td style={{...S.td,color:"#34d399",fontFamily:"monospace",fontWeight:700}}>{fmt(cobradoMenos30)}</td>
               <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontWeight:700}}>{fmt(cobrado3060)}</td>
               <td style={{...S.td,color:"#f87171",fontFamily:"monospace",fontWeight:700}}>{fmt(cobradoMas60)}</td>
@@ -963,6 +1047,35 @@ function ResumenTab() {
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div style={{...S.card,overflow:"hidden",border:"1px solid #f8717133"}}>
+      <div style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,.07)",background:"#f8717108",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div>
+          <span style={{fontWeight:700,color:"#f87171",fontSize:14}}>⚠️ Clientes SIN ACCIÓN</span>
+          <span style={{fontSize:12,color:"#475569",marginLeft:10}}>{sinAccion.length} clientes · sin cobros ni visitas esta semana</span>
+        </div>
+        <span style={{fontFamily:"monospace",fontWeight:700,color:"#f87171",fontSize:14}}>{fmt(saldoSinAccion)}</span>
+      </div>
+      {sinAccion.length === 0
+        ? <div style={{padding:24,textAlign:"center",color:"#34d399",fontSize:13,fontWeight:600}}>✅ Todos los clientes tuvieron alguna acción esta semana</div>
+        : <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead style={{position:"sticky",top:0,background:"#161b22",zIndex:1}}><tr style={{borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+              {["Código","Cliente","Localidad","Días","Saldo"].map(h=><th key={h} style={S.th}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {sinAccion.map(c=><tr key={c.id}>
+                <td style={{...S.td,color:"#fbbf24",fontFamily:"monospace",fontSize:11}}>{c.codigo||"—"}</td>
+                <td style={{...S.td,color:"#fff",fontWeight:600}}>{c.nombre}</td>
+                <td style={{...S.td,color:"#64748b",fontSize:12}}>{c.localidad||"—"}</td>
+                <td style={S.td}><DiaBadge dias={c.dias} /></td>
+                <td style={{...S.td,color:"#f87171",fontFamily:"monospace",fontWeight:700}}>{fmt(c.saldo)}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      }
     </div>
 
     {resumen.map(r => (r.cobros.length > 0 || r.visitas.length > 0) && <div key={r.nombre} style={S.card}>
